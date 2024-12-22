@@ -52,8 +52,32 @@ class HashJoinExecutor : public AbstractExecutor {
   auto GetOutputSchema() const -> const Schema & override { return plan_->OutputSchema(); };
 
  private:
+  auto MakeLeftJoinKey(const Tuple *tuple) -> JoinKey {
+    std::vector<Value> keys;
+    for (const auto &expr : plan_->LeftJoinKeyExpressions()) {
+      keys.emplace_back(expr->Evaluate(tuple, left_child_executor_->GetOutputSchema()));
+    }
+    return {keys};
+  }
+  auto MakeRightJoinKey(const Tuple *tuple) -> JoinKey {
+    std::vector<Value> keys;
+    for (const auto &expr : plan_->RightJoinKeyExpressions()) {
+      keys.emplace_back(expr->Evaluate(tuple, right_child_executor_->GetOutputSchema()));
+    }
+    return {keys};
+  }
+  /** The left child executor that produces tuples for the left side of join */
+  std::unique_ptr<AbstractExecutor> left_child_executor_;
+  /** The right child executor that produces tuples for the right side of join */
+  std::unique_ptr<AbstractExecutor> right_child_executor_;
   /** The HashJoin plan node to be executed. */
   const HashJoinPlanNode *plan_;
+  /** hash table **/
+  std::unordered_map<JoinKey, std::vector<Tuple>> hash_join_table_;
+  /** joined tuple result **/
+  std::vector<Tuple> hash_join_result_;
+  /** result iterator **/
+  std::vector<Tuple>::const_iterator result_iterator_;
 };
 
 }  // namespace bustub

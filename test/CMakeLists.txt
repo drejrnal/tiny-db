@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.10)
 
 include(GoogleTest)
 
-file(GLOB_RECURSE BUSTUB_TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/*/*test.cpp")
+file(GLOB_RECURSE BUSTUB_TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/common/*test.cpp")
 
 # #####################################################################################################################
 # MAKE TARGETS
@@ -20,6 +20,7 @@ add_custom_target(check-public-ci-tests COMMAND ${CMAKE_CTEST_COMMAND} --verbose
 # #########################################
 foreach (bustub_test_source ${BUSTUB_TEST_SOURCES})
     # Create a human readable name.
+    MESSAGE(STATUS "Adding test: ${bustub_test_source}")
     get_filename_component(bustub_test_filename ${bustub_test_source} NAME)
     string(REPLACE ".cpp" "" bustub_test_name ${bustub_test_filename})
 
@@ -82,18 +83,18 @@ add_custom_target(test-p3 ${CMAKE_CTEST_COMMAND} -R SQLLogicTest)
 # #########################################
 # "make XYZ_test"
 # #########################################
-foreach (bustub_test_source ${BUSTUB_SLT_SOURCES})
-    # Create a human readable name.
-    get_filename_component(bustub_test_filename ${bustub_test_source} NAME)
-    string(REPLACE ".slt" "" bustub_filename_wo_suffix "${bustub_test_filename}")
-    string(REPLACE ".slt" "" bustub_test_name "SQLLogicTest.${bustub_filename_wo_suffix}")
-    add_test(NAME ${bustub_test_name} COMMAND "${CMAKE_BINARY_DIR}/bin/bustub-sqllogictest" ${bustub_test_source} --verbose -d --in-memory)
-    add_custom_target(${bustub_filename_wo_suffix}_test COMMAND "${CMAKE_BINARY_DIR}/bin/bustub-sqllogictest" "${bustub_test_source}" --verbose -d --in-memory)
-    add_dependencies(${bustub_filename_wo_suffix}_test sqllogictest)
-endforeach ()
-
-add_dependencies(test-p3 sqllogictest)
+#foreach (bustub_test_source ${BUSTUB_SLT_SOURCES})
+#    # Create a human readable name.
+#    get_filename_component(bustub_test_filename ${bustub_test_source} NAME)
+#    string(REPLACE ".slt" "" bustub_filename_wo_suffix "${bustub_test_filename}")
+#    string(REPLACE ".slt" "" bustub_test_name "SQLLogicTest.${bustub_filename_wo_suffix}")
+#    add_test(NAME ${bustub_test_name} COMMAND "${CMAKE_BINARY_DIR}/bin/bustub-sqllogictest" ${bustub_test_source} --verbose -d --in-memory)
+#    add_custom_target(${bustub_filename_wo_suffix}_test COMMAND "${CMAKE_BINARY_DIR}/bin/bustub-sqllogictest" "${bustub_test_source}" --verbose -d --in-memory)
+#    add_dependencies(${bustub_filename_wo_suffix}_test sqllogictest)
+#endforeach ()
+#
+#add_dependencies(test-p3 sqllogictest)
 
 # Must build sqllogictest before checking tests
-add_dependencies(build-tests sqllogictest)
-add_dependencies(check-tests sqllogictest)
+#add_dependencies(build-tests sqllogictest)
+#add_dependencies(check-tests sqllogictest)

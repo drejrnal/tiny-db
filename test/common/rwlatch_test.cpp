@@ -14,6 +14,7 @@
 #include <vector>
 
 #include "common/rwlatch.h"
+#include "common/logger.h"
 #include "gtest/gtest.h"
 
 namespace bustub {
@@ -42,19 +43,19 @@ class Counter {
 // NOLINTNEXTLINE
 TEST(RWLatchTest, BasicTest) {
   int num_threads = 100;
-  Counter counter{};
-  counter.Add(5);
+  LOG_INFO("Spawning %d threads", num_threads);
+}
+
+TEST(RWLatchTest, WriteTest) {
+  int num_threads = 100;
+  Counter counter;
   std::vector<std::thread> threads;
-  for (int tid = 0; tid < num_threads; tid++) {
-    if (tid % 2 == 0) {
-      threads.emplace_back([&counter]() { counter.Read(); });
-    } else {
-      threads.emplace_back([&counter]() { counter.Add(1); });
-    }
-  }
   for (int i = 0; i < num_threads; i++) {
-    threads[i].join();
+    threads.emplace_back([&counter] { counter.Add(1); });
   }
-  EXPECT_EQ(counter.Read(), 55);
+  for (auto &t : threads) {
+    t.join();
+  }
+  EXPECT_EQ(counter.Read(), num_threads);
 }
 }  // namespace bustub

@@ -3,6 +3,7 @@ add_library(
   OBJECT
   transaction_manager.cpp
   transaction_manager_impl.cpp
+        lock_manager.cpp
   watermark.cpp)
 
 set(ALL_OBJECT_FILES
