@@ -126,6 +126,7 @@ auto TableHeap::MakeEagerIterator() -> TableIterator { return {this, {first_page
 auto TableHeap::UpdateTupleInPlace(const TupleMeta &meta, const Tuple &tuple, RID rid,
                                    std::function<bool(const TupleMeta &meta, const Tuple &table, RID rid)> &&check)
     -> bool {
+  //thread-safe way to fetch the page
   auto page_guard = bpm_->FetchPageWrite(rid.GetPageId());
   auto page = page_guard.AsMut<TablePage>();
   auto [old_meta, old_tup] = page->GetTuple(rid);
