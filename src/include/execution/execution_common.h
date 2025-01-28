@@ -35,6 +35,10 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
 // the same code everywhere.
 
 //被txn->AppendUndoLog调用
-auto GenerateNewUndoLog(Transaction *txn, const Tuple &old_tuple, const Tuple &updated_tuple, bool is_deleted, const Schema &schema, const UndoLink &prev_link) -> UndoLog;
+auto GenerateNewUndoLog(Transaction *txn, const Tuple &old_tuple, const Tuple &updated_tuple, bool is_deleted,
+                        const Schema &schema, const std::optional<UndoLink> &prev_link) -> UndoLog;
+
+auto UpdateExistUndoLog(UndoLog *exist_undo_log, bool is_deleted, const Schema &schema, const Tuple &old_tuple,
+                        const Tuple &updated_tuple) -> void;
 
 }  // namespace bustub

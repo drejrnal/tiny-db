@@ -61,28 +61,49 @@ std::vector<UndoLog> CollectUndoLogs(Transaction *txn, RID rid,
   return undo_logs;
 }
 
-auto GenerateNewUndoLog(Transaction *txn, const Tuple &old_tuple, const Tuple &updated_tuple, bool is_deleted, const Schema &schema, const UndoLink &prev_link) -> UndoLog{
+/**
+ * 构造只保留更新字段的tuple
+ */
+static auto generateModifiedTuple(const Tuple &old_tuple, const Tuple &updated_tuple, const Schema &schema) {
+  std::vector<Value> modified_values;
+  std::vector<uint32_t> modified_columns_indice;
+  for (uint32_t i = 0; i < schema.GetColumnCount(); ++i) {
+    if (old_tuple.GetValue(&schema, i).CompareNotEquals(updated_tuple.GetValue(&schema, i)) == CmpBool::CmpTrue) {
+      modified_columns_indice.emplace_back(i);
+      modified_values.push_back(updated_tuple.GetValue(&schema, i));
+    }
+  }
+  auto modified_schema = Schema::CopySchema(&schema, modified_columns_indice);
+  return Tuple{modified_values, &modified_schema};
+}
+
+auto GenerateNewUndoLog(Transaction *txn, const Tuple &old_tuple, const Tuple &updated_tuple, bool is_deleted,
+                        const Schema &schema, const std::optional<UndoLink> &prev_link) -> UndoLog {
   UndoLog undo_log;
-  undo_log.is_deleted_ = is_deleted;
   undo_log.ts_ = txn->GetTransactionId();
   if (!is_deleted){
     undo_log.modified_fields_.reserve(schema.GetColumnCount());
-    std::vector<Column> modified_columns;
-    std::vector<Value> modified_values;
-    for(uint32_t i = 0; i < schema.GetColumnCount(); ++i){
-      if(old_tuple.GetValue(&schema, i).CompareNotEquals(updated_tuple.GetValue(&schema, i)) == CmpBool::CmpTrue){
-        undo_log.modified_fields_[i] = true;
-        modified_columns.push_back(schema.GetColumn(i));
-        modified_values.push_back(updated_tuple.GetValue(&schema, i));
-      } else{
-        undo_log.modified_fields_[i] = false;
-      }
+    UpdateExistUndoLog(&undo_log, is_deleted, schema, old_tuple, updated_tuple);
+    if (prev_link.has_value()) {
+      undo_log.prev_version_ = prev_link.value();
     }
-    Schema modified_schema{modified_columns};
-    undo_log.tuple_ = Tuple{modified_values, &modified_schema};
-    undo_log.prev_version_ = prev_link;
   }
   return undo_log;
+}
+
+auto UpdateExistUndoLog(UndoLog *exist_undo_log, bool is_deleted, const Schema &schema, const Tuple &old_tuple,
+                        const Tuple &updated_tuple) -> void {
+  exist_undo_log->is_deleted_ = is_deleted;
+  if (!is_deleted) {
+    for (uint32_t i = 0; i < schema.GetColumnCount(); ++i) {
+      if (old_tuple.GetValue(&schema, i).CompareNotEquals(updated_tuple.GetValue(&schema, i)) == CmpBool::CmpTrue) {
+        exist_undo_log->modified_fields_[i] = true;
+      } else {
+        exist_undo_log->modified_fields_[i] = false;
+      }
+    }
+    exist_undo_log->tuple_ = generateModifiedTuple(old_tuple, updated_tuple, schema);
+  }
 }
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,
