@@ -9,53 +9,52 @@
 
 namespace bustub {
 /**
- * 如果tuple被删除，直接返回base_tuple，需要保证tableheap保存删除前的base tuple
- * @param schema
+ * @param schema base tuple对应的schema
  * @param base_tuple
  * @param base_meta
  * @param undo_logs
  * @return
  */
-auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
+auto ReconstructTuple(const Schema &schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
-  std::vector<Value> values{schema->GetColumnCount()};
-  if (base_meta.is_deleted_){
-    return base_tuple;
-  }
-  for (uint32_t i = 0; i < schema->GetColumnCount(); ++i) {
-    values[i] = base_tuple.GetValue(schema, i);
-  }
-  if (undo_logs.end()->is_deleted_){
+  // 这里undo log理论上不应该出现被删除的情况
+  if (undo_logs.empty() || (undo_logs.end()->is_deleted_)) {
     return std::nullopt;
   }
-  for (UndoLog undoLog : undo_logs) {
-    if (undoLog.is_deleted_){
-      continue;
-    }else{
+  std::vector<Value> values{schema.GetColumnCount()};
+  for (uint32_t i = 0; i < schema.GetColumnCount(); ++i) {
+    values[i] = base_tuple.GetValue(&schema, i);
+  }
+  for (UndoLog undo_log : undo_logs) {
+    if (!undo_log.is_deleted_) {
       //tuple里每一列只维护在一个undo log里
-      for (uint32_t i = 0; i < undoLog.modified_fields_.size(); ++i) {
-        if (undoLog.modified_fields_[i]) {
-          values[i] = undoLog.tuple_.GetValue(schema, i);
+      for (uint32_t i = 0; i < undo_log.modified_fields_.size(); ++i) {
+        if (undo_log.modified_fields_[i]) {
+          values[i] = undo_log.tuple_.GetValue(&schema, i);
         }
       }
     }
   }
-  return std::make_optional<Tuple>(values, schema);
+  return std::make_optional<Tuple>(values, &schema);
 }
 
-std::vector<UndoLog> CollectUndoLogs(Transaction *txn, RID rid,
-                                     TransactionManager *txn_manager, const TupleMeta &base_meta) {
+/**
+ * 调用前需判断是否读当前事务正修改的tuple，只有不是的情况，才会调用此函数
+ */
+auto CollectUndoLogs(Transaction *txn, RID rid, TransactionManager *txn_manager) -> std::vector<UndoLog> {
   std::vector<UndoLog> undo_logs;
-  if (base_meta.ts_ == TXN_START_ID + txn->GetTransactionId()) {
-    return undo_logs;
-  }
-  std::optional<UndoLink> undo_link = txn_manager->GetUndoLink(rid);
-  while (undo_link.has_value()) {
-    UndoLog undo_log = txn_manager->GetUndoLog(undo_link.value());
-    if (undo_log.ts_ >= txn->GetReadTs()) {
-      undo_logs.emplace_back(undo_log);
-    } else{
-      break;
+  std::optional<UndoLink> undo_link_optional = txn_manager->GetUndoLink(rid);
+  if (undo_link_optional.has_value()) {
+    UndoLink undo_link = undo_link_optional.value();
+    // undo_link此处拿到以后，会存在并发更新的情况
+    while (undo_link.prev_txn_ != INVALID_TXN_ID) {
+      UndoLog undo_log = txn_manager->GetUndoLog(undo_link);
+      if (undo_log.ts_ >= txn->GetReadTs()) {
+        undo_logs.emplace_back(undo_log);
+      } else {
+        break;
+      }
+      undo_link = undo_log.prev_version_;
     }
   }
   return undo_logs;
@@ -70,7 +69,7 @@ static auto generateModifiedTuple(const Tuple &old_tuple, const Tuple &updated_t
   for (uint32_t i = 0; i < schema.GetColumnCount(); ++i) {
     if (old_tuple.GetValue(&schema, i).CompareNotEquals(updated_tuple.GetValue(&schema, i)) == CmpBool::CmpTrue) {
       modified_columns_indice.emplace_back(i);
-      modified_values.push_back(updated_tuple.GetValue(&schema, i));
+      modified_values.push_back(old_tuple.GetValue(&schema, i));
     }
   }
   auto modified_schema = Schema::CopySchema(&schema, modified_columns_indice);
