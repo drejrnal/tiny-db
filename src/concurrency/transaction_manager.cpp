@@ -101,6 +101,69 @@ void TransactionManager::Abort(Transaction *txn) {
   running_txns_.RemoveTxn(txn->read_ts_);
 }
 
-void TransactionManager::GarbageCollection() { UNIMPLEMENTED("not implemented"); }
+void TransactionManager::GarbageCollection() {
+  timestamp_t watermark = running_txns_.GetWatermark();
+
+  std::unique_lock<std::shared_mutex> lock(txn_map_mutex_);
+  // First collect all running transactions
+  std::vector<Transaction *> running_txns;
+  for (const auto &[_, txn] : txn_map_) {
+    if (txn->GetTransactionState() == TransactionState::RUNNING) {
+      running_txns.push_back(txn.get());
+    }
+  }
+
+  for (auto it = txn_map_.begin(); it != txn_map_.end();) {
+    const auto &txn = it->second;
+
+    // Only handle committed or aborted transactions
+    if (txn->GetTransactionState() != TransactionState::COMMITTED &&
+        txn->GetTransactionState() != TransactionState::ABORTED) {
+      ++it;
+      continue;
+    }
+
+    /** 检查当前事务所有的undolog是否不再被使用，若都不再被使用，则从事务表中删除该事务 */
+    bool can_gc = true;
+    for (const auto &undo_log : txn->undo_logs_) {
+      // If this version's timestamp is >= watermark, some transaction might need it
+      if (undo_log.ts_ >= watermark) {
+        can_gc = false;
+        break;
+      }
+
+      // An undo log may be needed by a running transaction if:
+      // 1. The running txn's read_ts is >= this version's timestamp AND
+      // 2. The running txn's read_ts is < the next version's timestamp
+      // This ensures we don't prematurely delete versions that running txns need
+      for (const auto *running_txn : running_txns) {
+        //如果事务的read_ts属于[undo log.ts_，next_undo_log.ts_),则不能回收undolog
+        auto read_ts = running_txn->GetReadTs();
+        if (read_ts >= undo_log.ts_) {
+          auto next_link = undo_log.next_version_;
+          // next_link为当前undolog的下一个版本,转换为UndoLink便于获取下一个版本的undolog
+          auto next_undo_link = UndoLink{.prev_txn_ = next_link.next_txn_, .prev_log_idx_ = next_link.next_log_idx_};
+          if (next_link.IsValid()) {
+            auto next_log = GetUndoLog(next_undo_link);
+            if (next_log.ts_ > read_ts) {
+              can_gc = false;
+              break;  // No need to check other running txns
+            }
+          }
+        }
+      }
+      //当前事务存在不能回收的Undolog，则当前事务不被回收
+      if (!can_gc) {
+        break;
+      }
+    }
+
+    if (can_gc) {
+      it = txn_map_.erase(it);
+    } else {
+      ++it;
+    }
+  }
+}
 
 }  // namespace bustub

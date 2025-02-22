@@ -74,17 +74,34 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       txn->RecordRidUndoLogIndex(child_rid, txn->GetUndoLogNum() - 1);
     }
     /* 更新page version info表 */
-    txn_mgr->UpdateUndoLink(child_rid, new_undo_link, [&prev_undo_link](const std::optional<UndoLink> &undo) -> bool {
-      if (undo.has_value() && prev_undo_link.has_value()) {
-        return undo.value() == prev_undo_link.value();
+    auto updated_result = txn_mgr->UpdateUndoLink(child_rid, new_undo_link,
+                                                  [&prev_undo_link](const std::optional<UndoLink> &undo) -> bool {
+                                                    if (undo.has_value() && prev_undo_link.has_value()) {
+                                                      return undo.value() == prev_undo_link.value();
+                                                    }
+                                                    if (!undo.has_value() && !prev_undo_link.has_value()) {
+                                                      return true;
+                                                    }
+                                                    return false;
+                                                  });
+    /** 当tuple被成功更新时，更新prev_undo_log的next version,使其可以访问当前的更新， 因为
+     *  前述函数相当于一个原子操作，此处的更新和前述next_undo_log更新prev_version的操作也可以
+     *  看做是原子的
+     */
+    if (updated_result) {
+      *rid = child_rid;
+      if (prev_undo_link.has_value()) {
+        auto prev_undo_log = txn_mgr->GetUndoLogOptional(prev_undo_link.value());
+        if (prev_undo_log.has_value()) {
+          auto prev_undo_log_value = prev_undo_log.value();
+          prev_undo_log_value.next_version_ = RedoLink{
+              .next_txn_ = new_undo_link.prev_txn_,
+              .next_log_idx_ = new_undo_link.prev_log_idx_,
+          };
+        }
       }
-      if (!undo.has_value() && !prev_undo_link.has_value()) {
-        return true;
-      }
-      return false;
-    });
-    *rid = child_rid;
-    return true;
+      return true;
+    }
   }
   return false;
 }
