@@ -38,6 +38,7 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
   TableHeap *table = table_info_->table_.get();
   Transaction *txn = exec_ctx_->GetTransaction();
   TransactionManager *txn_mgr = exec_ctx_->GetTransactionManager();
+  const Schema &schema = child_executor_->GetOutputSchema();
   auto old_meta = table->GetTupleMeta(child_rid);
   // 如果当前tuple正在被其他事务修改
   if (old_meta.ts_ != txn->GetTransactionId() && (((old_meta.ts_ & TXN_START_ID) >> 62) != 0)) {
@@ -60,22 +61,27 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
                                   })) {
       table->UpdateTupleMeta(meta, child_rid);
       UndoLink new_undo_link;
+      auto prev_undo_link = txn_mgr->GetUndoLink(child_rid);
       if (txn->GetUndoLogIndex(child_rid) != INVALID_UNDOLOG_INDEX) {
         UndoLog exist_undo_log = txn->GetUndoLog(txn->GetUndoLogIndex(child_rid));
-        auto updated_undo_log = GenerateNewUndoLog(txn, child_tuple, updated_tuple, false,
-                                                   child_executor_->GetOutputSchema(), exist_undo_log.prev_version_);
-        txn->ModifyUndoLog(txn->GetUndoLogIndex(child_rid), updated_undo_log);
+        UpdateExistUndoLog(&exist_undo_log, false, schema, child_tuple, updated_tuple);
+        txn->ModifyUndoLog(txn->GetUndoLogIndex(child_rid), exist_undo_log);
       } else {
-        auto prev_undo_link = txn_mgr->GetUndoLink(child_rid);
-        auto new_undo_log =
-            GenerateNewUndoLog(txn, child_tuple, updated_tuple, false, child_executor_->GetOutputSchema(),
-                               prev_undo_link.has_value() ? prev_undo_link.value() : UndoLink{});
+        auto new_undo_log = GenerateNewUndoLog(txn, child_tuple, updated_tuple, false,
+                                               child_executor_->GetOutputSchema(), prev_undo_link);
         new_undo_link = txn->AppendUndoLog(new_undo_log);
         txn->RecordRidUndoLogIndex(child_rid, txn->GetUndoLogNum() - 1);
-        txn_mgr->UpdateUndoLink(
-            child_rid, new_undo_link,
-            [&prev_undo_link](const std::optional<UndoLink> &undo) -> bool { return undo == prev_undo_link; });
       }
+      /* 更新page version info表 */
+      txn_mgr->UpdateUndoLink(child_rid, new_undo_link, [&prev_undo_link](const std::optional<UndoLink> &undo) -> bool {
+        if (undo.has_value() && prev_undo_link.has_value()) {
+          return undo.value() == prev_undo_link.value();
+        } else if (!undo.has_value() && !prev_undo_link.has_value()) {
+          return true;
+        } else {
+          return false;
+        }
+      });
       *rid = child_rid;
       return true;
     } else {
