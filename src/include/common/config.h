@@ -32,6 +32,7 @@ extern std::chrono::duration<int64_t> log_timeout;
 
 static constexpr int INVALID_PAGE_ID = -1;                                           // invalid page id
 static constexpr int INVALID_TXN_ID = -1;                                            // invalid transaction id
+static constexpr int INVALID_UNDOLOG_INDEX = -1;                                     // invalid undo log index
 static constexpr int INVALID_LSN = -1;                                               // invalid log sequence number
 static constexpr int HEADER_PAGE_ID = 0;                                             // the header page id
 static constexpr int BUSTUB_PAGE_SIZE = 4096;                                        // size of a data page in byte

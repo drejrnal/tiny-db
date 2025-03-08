@@ -132,6 +132,12 @@ class Transaction {
     return {txn_id_, static_cast<int>(undo_logs_.size() - 1)};
   }
 
+  /** record the rid -> undo log index mapping */
+  inline auto RecordRidUndoLogIndex(RID rid, size_t log_id) {
+    std::scoped_lock<std::mutex> lck(latch_);
+    undo_log_index_[rid] = log_id;
+  }
+
   inline auto AppendWriteSet(table_oid_t t, RID rid) {
     std::scoped_lock<std::mutex> lck(latch_);
     write_set_[t].insert(rid);
@@ -151,6 +157,15 @@ class Transaction {
   inline auto GetUndoLog(size_t log_id) -> UndoLog {
     std::scoped_lock<std::mutex> lck(latch_);
     return undo_logs_[log_id];
+  }
+
+  inline auto GetUndoLogIndex(const RID &rid) -> int {
+    std::scoped_lock<std::mutex> lck(latch_);
+    if (undo_log_index_.find(rid) == undo_log_index_.end()) {
+      return INVALID_UNDOLOG_INDEX;
+    } else {
+      return undo_log_index_[rid];
+    }
   }
 
   inline auto GetUndoLogNum() -> size_t {
@@ -189,6 +204,8 @@ class Transaction {
    * you should only append to this vector or update things in-place without removing anything.
    */
   std::vector<UndoLog> undo_logs_;
+  /** store the RID -> undo log index mapping */
+  std::unordered_map<RID, size_t> undo_log_index_;
 
   /** stores the RID of write tuples */
   std::unordered_map<table_oid_t, std::unordered_set<RID>> write_set_;
