@@ -11,7 +11,7 @@
 namespace bustub {
 auto CollectUndoLogs(Transaction *txn, RID rid, TransactionManager *txn_manager) -> std::vector<UndoLog>;
 
-auto ReconstructTuple(const Schema &schema, const Tuple &base_tuple, const TupleMeta &base_meta,
+auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple>;
 
 void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const TableInfo *table_info,

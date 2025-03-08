@@ -36,7 +36,7 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     *rid = tuple->GetRid();
   } else {
     std::vector<UndoLog> undo_logs = CollectUndoLogs(txn, next_tuple_pair.second.GetRid(), txn_manager);
-    std::optional<Tuple> result = ReconstructTuple(schema, next_tuple_pair.second, next_tuple_pair.first, undo_logs);
+    std::optional<Tuple> result = ReconstructTuple(&schema, next_tuple_pair.second, next_tuple_pair.first, undo_logs);
     if (result == std::nullopt) {
       ++this->table_iter_;
       return false;

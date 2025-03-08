@@ -5,7 +5,7 @@ namespace bustub {
 
 // NOLINTBEGIN(bugprone-unchecked-optional-access)
 
-TEST(TxnScanTest, DISABLED_TupleReconstructTest) {  // NOLINT
+TEST(TxnScanTest, TupleReconstructTest) {  // NOLINT
   auto schema = ParseCreateStatement("a integer,b double,c boolean");
   {
     fmt::println(stderr, "A: only base tuple");
@@ -121,6 +121,7 @@ TEST(TxnScanTest, DISABLED_ScanTest) {  // NOLINT
   UndoLink prev_log_4;
   UndoLink prev_log_5;
   UndoLink prev_log_6;
+  bustub->txn_manager_->catalog_ = bustub->catalog_.get();
   auto txn0 = bustub->txn_manager_->Begin();
   ASSERT_EQ(txn0->GetReadTs(), 0);
 

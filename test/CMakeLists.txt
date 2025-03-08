@@ -2,7 +2,10 @@ cmake_minimum_required(VERSION 3.10)
 
 include(GoogleTest)
 
-file(GLOB_RECURSE BUSTUB_TEST_SOURCES "${PROJECT_SOURCE_DIR}/test/common/*test.cpp")
+file(GLOB_RECURSE BUSTUB_TEST_SOURCES
+        "${PROJECT_SOURCE_DIR}/test/common/*test.cpp"
+        "${PROJECT_SOURCE_DIR}/test/txn/*test.cpp"
+)
 
 # #####################################################################################################################
 # MAKE TARGETS

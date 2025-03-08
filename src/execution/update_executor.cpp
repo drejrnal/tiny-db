@@ -56,11 +56,11 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     updated_values.push_back(expr->Evaluate(&child_tuple, child_executor_->GetOutputSchema()));
   }
   Tuple updated_tuple(updated_values, &child_executor_->GetOutputSchema());
+  // UpdateTupleInPlace内既会更新tuple也会更新meta信息
   if (table->UpdateTupleInPlace(meta, updated_tuple, child_rid,
                                 [&old_meta](const TupleMeta &origin_meta, const Tuple &tuple, const RID rid) -> bool {
                                   return origin_meta == old_meta;
                                 })) {
-    table->UpdateTupleMeta(meta, child_rid);
     UndoLink new_undo_link;
     auto prev_undo_link = txn_mgr->GetUndoLink(child_rid);
     if (txn->GetUndoLogIndex(child_rid) != INVALID_UNDOLOG_INDEX) {
@@ -90,6 +90,8 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
      */
     if (updated_result) {
       *rid = child_rid;
+      // 收集当前更新的tuple到write set中，以便在事务提交时进行时间戳的更新
+      txn->AppendWriteSet(plan_->table_oid_, child_rid);
       if (prev_undo_link.has_value()) {
         auto prev_undo_log = txn_mgr->GetUndoLogOptional(prev_undo_link.value());
         if (prev_undo_log.has_value()) {
