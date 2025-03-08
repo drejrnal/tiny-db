@@ -69,6 +69,13 @@ auto TransactionManager::UpdateVersionLink(RID rid, std::optional<VersionUndoLin
   return true;
 }
 
+/**
+ * 事务读取某一tuple时，通过txn_manager获取该tuple的VersionUndoLink
+ * 通过versionUndoLink获取对应的undo link
+ * 此处存在多个事务读写tuple并更改version chain的并发情况，所以需要锁保证线程安全
+ * @param rid
+ * @return
+ */
 auto TransactionManager::GetVersionLink(RID rid) -> std::optional<VersionUndoLink> {
   std::shared_lock<std::shared_mutex> lck(version_info_mutex_);
   auto iter = version_info_.find(rid.GetPageId());

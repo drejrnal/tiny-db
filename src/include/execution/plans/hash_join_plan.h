@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "binder/table_ref/bound_join_ref.h"
+#include "common/util/hash_util.h"
 #include "execution/expressions/abstract_expression.h"
 #include "execution/plans/abstract_plan.h"
 
@@ -72,7 +73,6 @@ class HashJoinPlanNode : public AbstractPlanNode {
   std::vector<AbstractExpressionRef> left_key_expressions_;
   /** The expression to compute the right JOIN key */
   std::vector<AbstractExpressionRef> right_key_expressions_;
-
   /** The join type */
   JoinType join_type_;
 
@@ -80,4 +80,29 @@ class HashJoinPlanNode : public AbstractPlanNode {
   auto PlanNodeToString() const -> std::string override;
 };
 
+/** joinKey represent multiple attributes consist of a join key **/
+struct JoinKey {
+  std::vector<Value> values_;
+
+  auto operator==(const JoinKey &other) const -> bool {
+    for (uint32_t i = 0; i < values_.size(); i++) {
+      if (values_[i].CompareEquals(other.values_[i]) != CmpBool::CmpTrue) {
+        return false;
+      }
+    }
+    return true;
+  }
+};
+
 }  // namespace bustub
+
+template <>
+struct std::hash<bustub::JoinKey> {
+  auto operator()(const bustub::JoinKey &key) const -> std::size_t {
+    std::size_t hash = 0;
+    for (const auto &value : key.values_) {
+      hash = bustub::HashUtil::CombineHashes(hash, bustub::HashUtil::HashValue(&value));
+    }
+    return hash;
+  }
+};
