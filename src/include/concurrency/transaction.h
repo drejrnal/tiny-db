@@ -70,6 +70,23 @@ struct UndoLink {
   auto IsValid() const -> bool { return prev_txn_ != INVALID_TXN_ID; }
 };
 
+/** Represent a link to the next version of this tuple */
+struct RedoLink {
+  /* Next version can be found in which txn */
+  txn_id_t next_txn_{INVALID_TXN_ID};
+  /* The log index of the next version in `next_txn_` */
+  int next_log_idx_{0};
+
+  friend auto operator==(const RedoLink &a, const RedoLink &b) {
+    return a.next_txn_ == b.next_txn_ && a.next_log_idx_ == b.next_log_idx_;
+  }
+
+  friend auto operator!=(const RedoLink &a, const RedoLink &b) { return !(a == b); }
+
+  /* Checks if the redo link points to something. */
+  auto IsValid() const -> bool { return next_txn_ != INVALID_TXN_ID; }
+};
+
 struct UndoLog {
   /* Whether this log is a deletion marker */
   bool is_deleted_;
@@ -81,6 +98,8 @@ struct UndoLog {
   timestamp_t ts_{INVALID_TS};
   /* Undo log prev version */
   UndoLink prev_version_{};
+  /* Undo log next version - for easier version chain traversal */
+  RedoLink next_version_{};
 };
 
 /**
@@ -91,7 +110,10 @@ class Transaction {
   explicit Transaction(txn_id_t txn_id, IsolationLevel isolation_level = IsolationLevel::SNAPSHOT_ISOLATION)
       : isolation_level_(isolation_level), thread_id_(std::this_thread::get_id()), txn_id_(txn_id) {}
 
-  ~Transaction() = default;
+  ~Transaction() {
+    // logging the information about the transaction to be reclaimed
+    LOG_INFO("Transaction {} is being reclaimed", txn_id_);
+  }
 
   DISALLOW_COPY(Transaction);
 

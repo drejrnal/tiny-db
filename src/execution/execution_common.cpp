@@ -15,27 +15,30 @@ namespace bustub {
  * @param undo_logs
  * @return
  */
-auto ReconstructTuple(const Schema &schema, const Tuple &base_tuple, const TupleMeta &base_meta,
+auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
   // 这里undo log理论上不应该出现被删除的情况
-  if (undo_logs.empty() || (undo_logs.end()->is_deleted_)) {
+  if (undo_logs.empty()) {
+    return base_meta.is_deleted_ ? std::nullopt : std::make_optional(base_tuple);
+  } else if (undo_logs.end()->is_deleted_) {
     return std::nullopt;
-  }
-  std::vector<Value> values{schema.GetColumnCount()};
-  for (uint32_t i = 0; i < schema.GetColumnCount(); ++i) {
-    values[i] = base_tuple.GetValue(&schema, i);
-  }
-  for (UndoLog undo_log : undo_logs) {
-    if (!undo_log.is_deleted_) {
-      //tuple里每一列只维护在一个undo log里
-      for (uint32_t i = 0; i < undo_log.modified_fields_.size(); ++i) {
-        if (undo_log.modified_fields_[i]) {
-          values[i] = undo_log.tuple_.GetValue(&schema, i);
+  } else {
+    std::vector<Value> values{schema->GetColumnCount()};
+    for (uint32_t i = 0; i < schema->GetColumnCount(); ++i) {
+      values[i] = base_tuple.GetValue(schema, i);
+    }
+    for (UndoLog undo_log : undo_logs) {
+      if (!undo_log.is_deleted_) {
+        // tuple里每一列只维护在一个undo log里
+        for (uint32_t i = 0; i < undo_log.modified_fields_.size(); ++i) {
+          if (undo_log.modified_fields_[i]) {
+            values[i] = undo_log.tuple_.GetValue(schema, i);
+          }
         }
       }
     }
+    return std::make_optional<Tuple>(values, schema);
   }
-  return std::make_optional<Tuple>(values, &schema);
 }
 
 /**
