@@ -1,6 +1,7 @@
+#include "concurrency/watermark.h"
+#include <algorithm>
 #include <exception>
 #include "common/exception.h"
-#include "concurrency/watermark.h"
 
 namespace bustub {
 

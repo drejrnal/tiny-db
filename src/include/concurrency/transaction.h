@@ -112,7 +112,7 @@ class Transaction {
 
   ~Transaction() {
     // logging the information about the transaction to be reclaimed
-    LOG_INFO("Transaction {} is being reclaimed", txn_id_);
+    LOG_INFO("Transaction %ld is being reclaimed", txn_id_);
   }
 
   DISALLOW_COPY(Transaction);

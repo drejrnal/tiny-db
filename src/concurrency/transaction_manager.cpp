@@ -69,12 +69,15 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   }
 
   std::unique_lock<std::shared_mutex> txn_lck(txn_map_mutex_);
+  /*
   std::for_each(txn->undo_logs_.begin(), txn->undo_logs_.end(), [&txn](UndoLog &undo_log) {
     // 更新undo log的timestamp
     // transaction在更新tuple时，undo log记录的timestamp表示该事务当前正在进行修改，为特殊值，其他事务不可修改
     // 事务提交时，undo log的timestamp更新为commit timestamp
     undo_log.ts_ = txn->commit_ts_;
   });
+  no need to update timestamp of undo log, since undo log is initialized with commit timestamp from old_meta of tuple
+  */
   // 事务提交后，其所更改的tuple元信息需要更新到table heap中
   for (const auto &tuple_meta : txn->GetWriteSets()) {
     auto table = catalog_->GetTable(tuple_meta.first);

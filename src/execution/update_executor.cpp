@@ -68,7 +68,7 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
       UpdateExistUndoLog(&exist_undo_log, false, schema, child_tuple, updated_tuple);
       txn->ModifyUndoLog(txn->GetUndoLogIndex(child_rid), exist_undo_log);
     } else {
-      auto new_undo_log = GenerateNewUndoLog(txn, child_tuple, updated_tuple, false, child_executor_->GetOutputSchema(),
+      auto new_undo_log = GenerateNewUndoLog(txn, child_tuple, updated_tuple, false, old_meta.ts_, child_executor_->GetOutputSchema(),
                                              prev_undo_link);
       new_undo_link = txn->AppendUndoLog(new_undo_log);
       txn->RecordRidUndoLogIndex(child_rid, txn->GetUndoLogNum() - 1);

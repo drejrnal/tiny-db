@@ -17,10 +17,10 @@ namespace bustub {
  */
 auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const TupleMeta &base_meta,
                       const std::vector<UndoLog> &undo_logs) -> std::optional<Tuple> {
-  // 这里undo log理论上不应该出现被删除的情况
   if (undo_logs.empty()) {
     return base_meta.is_deleted_ ? std::nullopt : std::make_optional(base_tuple);
-  } else if (undo_logs.end()->is_deleted_) {
+  } else if ((undo_logs.end()- 1)->is_deleted_) {
+    // 这里undo log出现被删除的情况,因为不会tuple被删除又重新插入，但是根据ts的比较，当前事务读取的tuple是被删除的，所以undo log最后一项是个删除项
     return std::nullopt;
   } else {
     std::vector<Value> values{schema->GetColumnCount()};
@@ -79,10 +79,10 @@ static auto generateModifiedTuple(const Tuple &old_tuple, const Tuple &updated_t
   return Tuple{modified_values, &modified_schema};
 }
 
-auto GenerateNewUndoLog(Transaction *txn, const Tuple &old_tuple, const Tuple &updated_tuple, bool is_deleted,
+auto GenerateNewUndoLog(Transaction *txn, const Tuple &old_tuple, const Tuple &updated_tuple, bool is_deleted, timestamp_t prev_commit_ts,
                         const Schema &schema, const std::optional<UndoLink> &prev_link) -> UndoLog {
   UndoLog undo_log;
-  undo_log.ts_ = txn->GetTransactionId();
+  undo_log.ts_ = prev_commit_ts;
   if (!is_deleted){
     undo_log.modified_fields_.reserve(schema.GetColumnCount());
     UpdateExistUndoLog(&undo_log, is_deleted, schema, old_tuple, updated_tuple);

@@ -4,6 +4,28 @@
 namespace bustub {
 
 // NOLINTBEGIN(bugprone-unchecked-optional-access)
+TEST(TxnScanTest, ReconstructTupleTest) {  // NOLINT
+  auto schema = ParseCreateStatement("a integer,b double,c boolean");
+  {
+    auto base_meta = TupleMeta{2333, false};
+    auto base_tuple = Tuple{{Int(0), Double(1), BoolNull()}, schema.get()};
+
+    auto tuple = ReconstructTuple(schema.get(), base_tuple, base_meta, {});
+    ASSERT_TRUE(tuple.has_value());
+    VerifyTuple(schema.get(), *tuple, {Int(0), Double(1), BoolNull()});
+    // log attribute for each tuple column
+  }
+  {
+    auto base_meta = TupleMeta{2333, false};
+    auto base_tuple = Tuple{{Int(0), Double(1), BoolNull()}, schema.get()};
+    auto undo_log_1 = UndoLog{false, {true, false, true}, Tuple{{Int(1), Double(1), Bool(false)}, schema.get()}};
+    auto undo_log_2 = UndoLog{false, {true, true, true}, Tuple{{Int(2), Double(2), Bool(true)}, schema.get()}};
+    fmt::println(stderr, "Undo log for tuple");
+    auto prev_tuple = ReconstructTuple(schema.get(), base_tuple, base_meta, {undo_log_1, undo_log_2});
+    ASSERT_TRUE(prev_tuple.has_value());
+    VerifyTuple(schema.get(), *prev_tuple, {Int(2), Double(2), Bool(true)});
+  }
+}
 
 TEST(TxnScanTest, TupleReconstructTest) {  // NOLINT
   auto schema = ParseCreateStatement("a integer,b double,c boolean");
