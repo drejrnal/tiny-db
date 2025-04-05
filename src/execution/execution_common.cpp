@@ -113,25 +113,41 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
   // always use stderr for printing logs...
   fmt::println(stderr, "debug_hook: {}", info);
 
-  fmt::println(
-      stderr,
-      "You see this line of text because you have not implemented `TxnMgrDbg`. You should do this once you have "
-      "finished task 2. Implementing this helper function will save you a lot of time for debugging in later tasks.");
+  // Traverse the table heap and print each tuple's version chain
+  auto iter = table_heap->MakeIterator();
+  while (!iter.IsEnd()) {
+    auto [meta, tuple] = iter.GetTuple();
+    RID rid = tuple.GetRid();
 
-  // We recommend implementing this function as traversing the table heap and print the version chain. An example output
-  // of our reference solution:
-  //
-  // debug_hook: before verify scan
-  // RID=0/0 ts=txn8 tuple=(1, <NULL>, <NULL>)
-  //   txn8@0 (2, _, _) ts=1
-  // RID=0/1 ts=3 tuple=(3, <NULL>, <NULL>)
-  //   txn5@0 <del> ts=2
-  //   txn3@0 (4, <NULL>, <NULL>) ts=1
-  // RID=0/2 ts=4 <del marker> tuple=(<NULL>, <NULL>, <NULL>)
-  //   txn7@0 (5, <NULL>, <NULL>) ts=3
-  // RID=0/3 ts=txn6 <del marker> tuple=(<NULL>, <NULL>, <NULL>)
-  //   txn6@0 (6, <NULL>, <NULL>) ts=2
-  //   txn3@1 (7, _, _) ts=1
+    // Print the tuple info
+    fmt::println(
+        stderr, "RID={}/{} ts={} tuple={}", rid.GetPageId(), rid.GetSlotNum(),
+        (meta.ts_ & TXN_START_ID) ? fmt::format("txn{}", (meta.ts_ ^ TXN_START_ID)) : fmt::format("{}", meta.ts_),
+        meta.is_deleted_ ? "<del marker>" : tuple.ToString(table_info->schema_.get()));
+
+    // Traverse the version chain
+    std::optional<UndoLink> undo_link_opt = txn_mgr->GetUndoLink(rid);
+    std::string indent = "  ";
+
+    while (undo_link_opt.has_value()) {
+      UndoLink undo_link = undo_link_opt.value();
+      if (undo_link.prev_txn_ == INVALID_TXN_ID) {
+        break;
+      }
+
+      UndoLog undo_log = txn_mgr->GetUndoLog(undo_link);
+      fmt::println(stderr, "{}txn{}@{} {} ts={}", indent,
+                   (undo_link.prev_txn_ ^ TXN_START_ID),  // Human readable txn id
+                   undo_link.prev_log_idx_,
+                   undo_log.is_deleted_ ? "<del>" : undo_log.tuple_.ToString(table_info->schema_.get()), undo_log.ts_);
+
+      // Move to the next version in the chain
+      undo_link_opt = undo_log.prev_version_.IsValid() ? std::make_optional(undo_log.prev_version_) : std::nullopt;
+    }
+
+    // Move to the next tuple
+    ++iter;
+  }
 }
 
 }  // namespace bustub

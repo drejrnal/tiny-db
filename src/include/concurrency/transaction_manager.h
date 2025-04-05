@@ -81,6 +81,12 @@ class TransactionManager {
   void Abort(Transaction *txn);
 
   /**
+   * Sets the catalog for the transaction manager to use.
+   * @param catalog pointer to the catalog
+   */
+  void SetCatalog(Catalog *catalog) { catalog_ = catalog; }
+
+  /**
    * @brief Use this function before task 4.2. Update an undo link that links table heap tuple to the first undo log.
    * Before updating, `check` function will be called to ensure validity.
    */

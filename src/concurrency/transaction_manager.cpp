@@ -101,9 +101,45 @@ void TransactionManager::Abort(Transaction *txn) {
     throw Exception("txn not in running / tainted state");
   }
 
-  // TODO(fall2023): Implement the abort logic!
-
+  // Implement the abort logic
   std::unique_lock<std::shared_mutex> lck(txn_map_mutex_);
+
+  // Roll back any changes made by the transaction
+  // For each tuple in the write set, we need to restore its original state
+  for (const auto &tuple_meta : txn->GetWriteSets()) {
+    auto table = catalog_->GetTable(tuple_meta.first);
+    for (const auto &rid : tuple_meta.second) {
+      TupleMeta current_meta = table->table_->GetTupleMeta(rid);
+
+      // Check if this is a tuple modified by this transaction (indicated by temporary txn ID)
+      if (current_meta.ts_ == txn->GetTransactionTempTs()) {
+        // Find the original state of the tuple before this transaction modified it
+        std::optional<UndoLink> undo_link_opt = GetUndoLink(rid);
+        if (undo_link_opt.has_value()) {
+          auto undo_link = undo_link_opt.value();
+          // Only process if this undolink belongs to our transaction
+          if (undo_link.prev_txn_ == txn->GetTransactionId()) {
+            // Get the undo log
+            auto undo_log = txn->GetUndoLog(undo_link.prev_log_idx_);
+
+            // If there was a previous version, restore it
+            if (undo_log.prev_version_.IsValid()) {
+              // Update the version chain to skip this transaction's entry
+              UpdateUndoLink(rid, undo_log.prev_version_);
+            } else {
+              // If no previous version, just reset the link
+              UpdateUndoLink(rid, std::nullopt);
+            }
+
+            // Restore the original metadata timestamp
+            TupleMeta restored_meta = TupleMeta{.ts_ = undo_log.ts_, .is_deleted_ = undo_log.is_deleted_};
+            table->table_->UpdateTupleMeta(restored_meta, rid);
+          }
+        }
+      }
+    }
+  }
+
   txn->state_ = TransactionState::ABORTED;
   running_txns_.RemoveTxn(txn->read_ts_);
 }
@@ -112,11 +148,13 @@ void TransactionManager::GarbageCollection() {
   timestamp_t watermark = running_txns_.GetWatermark();
 
   std::unique_lock<std::shared_mutex> lock(txn_map_mutex_);
-  // First collect all running transactions
-  std::vector<Transaction *> running_txns;
+
+  // First collect all running transactions and organize their read timestamps for O(log N) lookups
+  std::map<timestamp_t, int> running_txn_read_ts;
   for (const auto &[_, txn] : txn_map_) {
     if (txn->GetTransactionState() == TransactionState::RUNNING) {
-      running_txns.push_back(txn.get());
+      timestamp_t read_ts = txn->GetReadTs();
+      running_txn_read_ts[read_ts]++;
     }
   }
 
@@ -130,7 +168,7 @@ void TransactionManager::GarbageCollection() {
       continue;
     }
 
-    /** 检查当前事务所有的undolog是否不再被使用，若都不再被使用，则从事务表中删除该事务 */
+    /** Check if all undo logs of this transaction are no longer needed */
     bool can_gc = true;
     for (const auto &undo_log : txn->undo_logs_) {
       // If this version's timestamp is >= watermark, some transaction might need it
@@ -142,24 +180,25 @@ void TransactionManager::GarbageCollection() {
       // An undo log may be needed by a running transaction if:
       // 1. The running txn's read_ts is >= this version's timestamp AND
       // 2. The running txn's read_ts is < the next version's timestamp
-      // This ensures we don't prematurely delete versions that running txns need
-      for (const auto *running_txn : running_txns) {
-        //如果事务的read_ts属于[undo log.ts_，next_undo_log.ts_),则不能回收undolog
-        auto read_ts = running_txn->GetReadTs();
-        if (read_ts >= undo_log.ts_) {
-          auto next_link = undo_log.next_version_;
-          // next_link为当前undolog的下一个版本,转换为UndoLink便于获取下一个版本的undolog
-          auto next_undo_link = UndoLink{.prev_txn_ = next_link.next_txn_, .prev_log_idx_ = next_link.next_log_idx_};
-          if (next_link.IsValid()) {
-            auto next_log = GetUndoLog(next_undo_link);
-            if (next_log.ts_ > read_ts) {
-              can_gc = false;
-              break;  // No need to check other running txns
-            }
-          }
-        }
+      // Using a binary search on sorted read_ts for better performance
+
+      auto next_link = undo_log.next_version_;
+      timestamp_t next_ts = std::numeric_limits<timestamp_t>::max();  // Default if no next version
+
+      if (next_link.IsValid()) {
+        auto next_undo_link = UndoLink{.prev_txn_ = next_link.next_txn_, .prev_log_idx_ = next_link.next_log_idx_};
+        auto next_log = GetUndoLog(next_undo_link);
+        next_ts = next_log.ts_;
       }
-      //当前事务存在不能回收的Undolog，则当前事务不被回收
+
+      // Find the first read_ts >= undo_log.ts_
+      auto lower_bound_it = running_txn_read_ts.lower_bound(undo_log.ts_);
+      // Check if any read_ts falls in the range [undo_log.ts_, next_ts)
+      if (lower_bound_it != running_txn_read_ts.end() && lower_bound_it->first < next_ts) {
+        can_gc = false;
+        break;
+      }
+
       if (!can_gc) {
         break;
       }

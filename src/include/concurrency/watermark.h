@@ -21,7 +21,7 @@ class Watermark {
 
   /** The caller should update commit ts before removing the txn from the watermark so that we can track watermark
    * correctly. */
-  auto UpdateCommitTs(timestamp_t commit_ts) { commit_ts_ = commit_ts; }
+  void UpdateCommitTs(timestamp_t commit_ts);
 
   auto GetWatermark() -> timestamp_t {
     if (current_reads_.empty()) {

@@ -39,4 +39,12 @@ auto Watermark::RemoveTxn(timestamp_t read_ts) -> void {
   }
 }
 
+auto Watermark::UpdateCommitTs(timestamp_t commit_ts) -> void {
+  commit_ts_ = commit_ts;
+  // If there are no running transactions, the watermark should be updated to the commit_ts
+  if (current_reads_.empty()) {
+    watermark_ = commit_ts_;
+  }
+}
+
 }  // namespace bustub
