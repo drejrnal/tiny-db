@@ -123,7 +123,7 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
     fmt::println(
         stderr, "RID={}/{} ts={} tuple={}", rid.GetPageId(), rid.GetSlotNum(),
         (meta.ts_ & TXN_START_ID) ? fmt::format("txn{}", (meta.ts_ ^ TXN_START_ID)) : fmt::format("{}", meta.ts_),
-        meta.is_deleted_ ? "<del marker>" : tuple.ToString(table_info->schema_.get()));
+        meta.is_deleted_ ? "<del marker>" : tuple.ToString(&table_info->schema_));
 
     // Traverse the version chain
     std::optional<UndoLink> undo_link_opt = txn_mgr->GetUndoLink(rid);
@@ -139,7 +139,7 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
       fmt::println(stderr, "{}txn{}@{} {} ts={}", indent,
                    (undo_link.prev_txn_ ^ TXN_START_ID),  // Human readable txn id
                    undo_link.prev_log_idx_,
-                   undo_log.is_deleted_ ? "<del>" : undo_log.tuple_.ToString(table_info->schema_.get()), undo_log.ts_);
+                   undo_log.is_deleted_ ? "<del>" : undo_log.tuple_.ToString(&table_info->schema_), undo_log.ts_);
 
       // Move to the next version in the chain
       undo_link_opt = undo_log.prev_version_.IsValid() ? std::make_optional(undo_log.prev_version_) : std::nullopt;

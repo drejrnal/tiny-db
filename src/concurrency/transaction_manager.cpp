@@ -67,8 +67,6 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
       return false;
     }
   }
-
-  std::unique_lock<std::shared_mutex> txn_lck(txn_map_mutex_);
   /*
   std::for_each(txn->undo_logs_.begin(), txn->undo_logs_.end(), [&txn](UndoLog &undo_log) {
     // 更新undo log的timestamp
@@ -82,9 +80,8 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
   for (const auto &tuple_meta : txn->GetWriteSets()) {
     auto table = catalog_->GetTable(tuple_meta.first);
     std::for_each(tuple_meta.second.begin(), tuple_meta.second.end(), [&table, &txn](const RID &rid) {
-      TupleMeta current_meta = table->table_->GetTupleMeta(rid);
-      auto meta = TupleMeta{.ts_ = txn->commit_ts_, .is_deleted_ = current_meta.is_deleted_};
-      table->table_->UpdateTupleMeta(meta, rid);
+      auto meta = TupleMeta{.ts_ = txn->commit_ts_, .is_deleted_ = false};
+      table->table_->GetAndUpdateTupleMeta(rid, meta);
     });
   }
   // 当事务结构被析构时，其undo log会被清空，对应的undo link需要从version chain中移除
@@ -126,22 +123,14 @@ void TransactionManager::Abort(Transaction *txn) {
             if (undo_log.prev_version_.IsValid()) {
               // Update the version chain to skip this transaction's entry
               UpdateUndoLink(rid, undo_log.prev_version_);
-
-              // Get the previous version's undo log to get the correct timestamp
-              auto prev_version_log = GetUndoLog(undo_log.prev_version_);
-
-              // Restore the original metadata timestamp from the previous version
-              auto restored_meta = TupleMeta{.ts_ = prev_version_log.ts_, .is_deleted_ = prev_version_log.is_deleted_};
-              table->table_->UpdateTupleMeta(restored_meta, rid);
             } else {
               // If no previous version, this was a newly inserted tuple by this transaction
               // Set timestamp to 0 and mark as deleted to indicate it never existed
               UpdateUndoLink(rid, std::nullopt);
-
-              // Mark the tuple as deleted with timestamp 0
-              auto restored_meta = TupleMeta{.ts_ = 0, .is_deleted_ = true};
-              table->table_->UpdateTupleMeta(restored_meta, rid);
             }
+            // Restore the original metadata timestamp from the previous version
+            auto restored_meta = TupleMeta{.ts_ = undo_log.ts_, .is_deleted_ = undo_log.is_deleted_};
+            table->table_->UpdateTupleInPlace(restored_meta, undo_log.tuple_, rid);
           }
         }
       }

@@ -79,6 +79,7 @@ class TableHeap {
    */
   auto GetTupleMeta(RID rid) -> TupleMeta;
 
+  void GetAndUpdateTupleMeta(const RID &rid, TupleMeta &updated_meta);
   /** @return the iterator of this table. When this iterator is created, it will record the current last tuple in the
    * table heap, and the iterator will stop at that point, in order to avoid halloween problem. You usually will need to
    * use this function for project 3. Given that you have already implemented your project 4 update executor as a

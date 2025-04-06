@@ -89,10 +89,20 @@ auto TableHeap::InsertTuple(const TupleMeta &meta, const Tuple &tuple, LockManag
   return RID(last_page_id, slot_id);
 }
 
+void TableHeap::GetAndUpdateTupleMeta(const RID &rid, TupleMeta &updated_meta) {
+  auto page_guard = bpm_->FetchPageWrite(rid.GetPageId());
+  auto page = page_guard.AsMut<TablePage>();
+  auto current_meta = page->GetTupleMeta(rid);
+  updated_meta.is_deleted_ = current_meta.is_deleted_;
+  page->UpdateTupleMeta(updated_meta, rid);
+  page_guard.Drop();
+}
+
 void TableHeap::UpdateTupleMeta(const TupleMeta &meta, RID rid) {
   auto page_guard = bpm_->FetchPageWrite(rid.GetPageId());
   auto page = page_guard.AsMut<TablePage>();
   page->UpdateTupleMeta(meta, rid);
+  page_guard.Drop();
 }
 
 auto TableHeap::GetTuple(RID rid) -> std::pair<TupleMeta, Tuple> {
@@ -100,12 +110,14 @@ auto TableHeap::GetTuple(RID rid) -> std::pair<TupleMeta, Tuple> {
   auto page = page_guard.As<TablePage>();
   auto [meta, tuple] = page->GetTuple(rid);
   tuple.rid_ = rid;
+  page_guard.Drop();
   return std::make_pair(meta, std::move(tuple));
 }
 
 auto TableHeap::GetTupleMeta(RID rid) -> TupleMeta {
   auto page_guard = bpm_->FetchPageRead(rid.GetPageId());
   auto page = page_guard.As<TablePage>();
+  page_guard.Drop();
   return page->GetTupleMeta(rid);
 }
 
@@ -132,8 +144,10 @@ auto TableHeap::UpdateTupleInPlace(const TupleMeta &meta, const Tuple &tuple, RI
   auto [old_meta, old_tup] = page->GetTuple(rid);
   if (check == nullptr || check(old_meta, old_tup, rid)) {
     page->UpdateTupleInPlaceUnsafe(meta, tuple, rid);
+    page_guard.Drop();
     return true;
   }
+  page_guard.Drop();
   return false;
 }
 
