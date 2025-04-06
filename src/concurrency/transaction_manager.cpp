@@ -83,7 +83,7 @@ auto TransactionManager::Commit(Transaction *txn) -> bool {
     auto table = catalog_->GetTable(tuple_meta.first);
     std::for_each(tuple_meta.second.begin(), tuple_meta.second.end(), [&table, &txn](const RID &rid) {
       TupleMeta current_meta = table->table_->GetTupleMeta(rid);
-      TupleMeta meta = TupleMeta{.ts_ = txn->commit_ts_, .is_deleted_ = current_meta.is_deleted_};
+      auto meta = TupleMeta{.ts_ = txn->commit_ts_, .is_deleted_ = current_meta.is_deleted_};
       table->table_->UpdateTupleMeta(meta, rid);
     });
   }
@@ -126,14 +126,22 @@ void TransactionManager::Abort(Transaction *txn) {
             if (undo_log.prev_version_.IsValid()) {
               // Update the version chain to skip this transaction's entry
               UpdateUndoLink(rid, undo_log.prev_version_);
-            } else {
-              // If no previous version, just reset the link
-              UpdateUndoLink(rid, std::nullopt);
-            }
 
-            // Restore the original metadata timestamp
-            TupleMeta restored_meta = TupleMeta{.ts_ = undo_log.ts_, .is_deleted_ = undo_log.is_deleted_};
-            table->table_->UpdateTupleMeta(restored_meta, rid);
+              // Get the previous version's undo log to get the correct timestamp
+              auto prev_version_log = GetUndoLog(undo_log.prev_version_);
+
+              // Restore the original metadata timestamp from the previous version
+              auto restored_meta = TupleMeta{.ts_ = prev_version_log.ts_, .is_deleted_ = prev_version_log.is_deleted_};
+              table->table_->UpdateTupleMeta(restored_meta, rid);
+            } else {
+              // If no previous version, this was a newly inserted tuple by this transaction
+              // Set timestamp to 0 and mark as deleted to indicate it never existed
+              UpdateUndoLink(rid, std::nullopt);
+
+              // Mark the tuple as deleted with timestamp 0
+              auto restored_meta = TupleMeta{.ts_ = 0, .is_deleted_ = true};
+              table->table_->UpdateTupleMeta(restored_meta, rid);
+            }
           }
         }
       }
@@ -196,10 +204,6 @@ void TransactionManager::GarbageCollection() {
       // Check if any read_ts falls in the range [undo_log.ts_, next_ts)
       if (lower_bound_it != running_txn_read_ts.end() && lower_bound_it->first < next_ts) {
         can_gc = false;
-        break;
-      }
-
-      if (!can_gc) {
         break;
       }
     }
