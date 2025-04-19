@@ -115,10 +115,15 @@ void TxnMgrDbg(const std::string &info, TransactionManager *txn_mgr, const Table
 
   // Traverse the table heap and print each tuple's version chain
   auto iter = table_heap->MakeIterator();
-  while (!iter.IsEnd()) {
-    auto [meta, tuple] = iter.GetTuple();
-    RID rid = tuple.GetRid();
 
+  while (!iter.IsEnd()) {
+    auto rid = iter.GetRID();
+    // 获取table读锁
+    auto read_page_guard = table_heap->AcquireTablePageReadLock(rid);
+    auto table_page = read_page_guard.As<TablePage>();
+
+    auto [meta, tuple] = table_heap->GetTupleWithLockAcquired(rid, table_page);
+    read_page_guard.Drop();
     // Print the tuple info
     fmt::println(
         stderr, "RID={}/{} ts={} tuple={}", rid.GetPageId(), rid.GetSlotNum(),

@@ -106,8 +106,12 @@ void TransactionManager::Abort(Transaction *txn) {
   for (const auto &tuple_meta : txn->GetWriteSets()) {
     auto table = catalog_->GetTable(tuple_meta.first);
     for (const auto &rid : tuple_meta.second) {
-      TupleMeta current_meta = table->table_->GetTupleMeta(rid);
-
+      // 获取table读锁
+      auto read_page_guard = table->table_->AcquireTablePageReadLock(rid);
+      auto table_page = read_page_guard.As<TablePage>();
+      // Get the current metadata of the tuple
+      TupleMeta current_meta = table->table_->GetTupleMetaWithLockAcquired(rid, table_page);
+      read_page_guard.Drop();
       // Check if this is a tuple modified by this transaction (indicated by temporary txn ID)
       if (current_meta.ts_ == txn->GetTransactionTempTs()) {
         // Find the original state of the tuple before this transaction modified it

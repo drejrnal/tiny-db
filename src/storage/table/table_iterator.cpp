@@ -32,6 +32,7 @@ TableIterator::TableIterator(TableHeap *table_heap, RID rid, RID stop_at_rid)
     if (rid_.GetSlotNum() >= page->GetNumTuples()) {
       rid_ = RID{INVALID_PAGE_ID, 0};
     }
+    page_guard.Drop();
   }
 }
 

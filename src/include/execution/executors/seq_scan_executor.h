@@ -54,6 +54,7 @@ class SeqScanExecutor : public AbstractExecutor {
 
   /** Metadata identifying the table that should be scanned */
   const TableInfo *table_info_;
+  TableHeap *table_heap_;
 
   /** The iterator of the table */
   TableIterator table_iter_;

@@ -20,7 +20,10 @@ SeqScanExecutor::SeqScanExecutor(ExecutorContext *exec_ctx, const SeqScanPlanNod
   this->table_info_ = exec_ctx->GetCatalog()->GetTable(plan->table_oid_);
 }
 
-void SeqScanExecutor::Init() { this->table_iter_ = this->table_info_->table_->MakeIterator(); }
+void SeqScanExecutor::Init() {
+  this->table_heap_ = this->table_info_->table_.get();
+  this->table_iter_ = this->table_info_->table_->MakeIterator();
+}
 
 auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   Transaction *txn = exec_ctx_->GetTransaction();
@@ -29,7 +32,12 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   if (this->table_iter_.IsEnd()) {
     return false;
   }
-  auto next_tuple_pair = this->table_iter_.GetTuple();
+  // 获取table读锁
+  auto current_rid = this->table_iter_.GetRID();
+  auto read_page_guard = this->table_heap_->AcquireTablePageReadLock(current_rid);
+  auto table_page = read_page_guard.As<TablePage>();
+
+  auto next_tuple_pair = this->table_heap_->GetTupleWithLockAcquired(current_rid, table_page);
   if (txn->GetTransactionTempTs() == next_tuple_pair.first.ts_) {
     // 读取当前事务正在修改的tuple
     *tuple = next_tuple_pair.second;
@@ -45,6 +53,7 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
     *rid = tuple->GetRid();
   }
   ++this->table_iter_;
+  read_page_guard.Drop();
   return true;
 }
 }  // namespace bustub

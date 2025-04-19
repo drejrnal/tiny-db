@@ -17,7 +17,7 @@
 
 namespace bustub {
 
-TEST(TransactionInsert, InsertTest) {
+TEST(TransactionCommitAndAbort, CommitAndAbortTest) {
   auto bustub = std::make_unique<BustubInstance>();
   auto schema = ParseCreateStatement("a integer,b integer,c integer");
   auto table_info = bustub->catalog_->CreateTable(nullptr, "abort_test_table", *schema);
@@ -35,7 +35,7 @@ TEST(TransactionInsert, InsertTest) {
   txn1->AppendWriteSet(table_info->oid_, rid1);
   bustub->txn_manager_->Commit(txn1);
   ASSERT_EQ(txn1->GetCommitTs(), 1);
-  // TxnMgrDbg("after_insert", bustub->txn_manager_.get(), table_info, table_info->table_.get());
+  TxnMgrDbg("after_insert", bustub->txn_manager_.get(), table_info, table_info->table_.get());
 
   // After txn1 commits, start txn3
   auto txn3 = bustub->txn_manager_->Begin();
@@ -59,8 +59,7 @@ TEST(TransactionInsert, InsertTest) {
 
   // Update version chain
   bustub->txn_manager_->UpdateUndoLink(rid1, undo_link);
-  // TODO 如何防止读写锁死锁等待
-  // TxnMgrDbg("after_update_before_abort", bustub->txn_manager_.get(), table_info, table_info->table_.get());
+  TxnMgrDbg("after_update_before_abort", bustub->txn_manager_.get(), table_info, table_info->table_.get());
   //  Now abort txn3
   bustub->txn_manager_->Abort(txn3);
   ASSERT_EQ(txn3->GetTransactionState(), TransactionState::ABORTED);

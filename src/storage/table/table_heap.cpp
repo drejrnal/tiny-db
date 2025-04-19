@@ -117,8 +117,9 @@ auto TableHeap::GetTuple(RID rid) -> std::pair<TupleMeta, Tuple> {
 auto TableHeap::GetTupleMeta(RID rid) -> TupleMeta {
   auto page_guard = bpm_->FetchPageRead(rid.GetPageId());
   auto page = page_guard.As<TablePage>();
+  auto meta = page->GetTupleMeta(rid);
   page_guard.Drop();
-  return page->GetTupleMeta(rid);
+  return meta;
 }
 
 auto TableHeap::MakeIterator() -> TableIterator {
