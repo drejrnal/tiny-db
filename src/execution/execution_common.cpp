@@ -30,9 +30,10 @@ auto ReconstructTuple(const Schema *schema, const Tuple &base_tuple, const Tuple
     for (UndoLog undo_log : undo_logs) {
       if (!undo_log.is_deleted_) {
         // tuple里每一列只维护在一个undo log里
+        size_t modified_field_index = 0;
         for (uint32_t i = 0; i < undo_log.modified_fields_.size(); ++i) {
           if (undo_log.modified_fields_[i]) {
-            values[i] = undo_log.tuple_.GetValue(schema, i);
+            values[i] = undo_log.tuple_.GetValue(schema, modified_field_index++);
           }
         }
       }
@@ -84,7 +85,7 @@ auto GenerateNewUndoLog(Transaction *txn, const Tuple &old_tuple, const Tuple &u
   UndoLog undo_log;
   undo_log.ts_ = prev_commit_ts;
   if (!is_deleted){
-    undo_log.modified_fields_.reserve(schema.GetColumnCount());
+    undo_log.modified_fields_.resize(schema.GetColumnCount());
     UpdateExistUndoLog(&undo_log, is_deleted, schema, old_tuple, updated_tuple);
     if (prev_link.has_value()) {
       undo_log.prev_version_ = prev_link.value();

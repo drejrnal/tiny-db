@@ -110,7 +110,7 @@ void TransactionManager::Abort(Transaction *txn) {
       auto read_page_guard = table->table_->AcquireTablePageReadLock(rid);
       auto table_page = read_page_guard.As<TablePage>();
       // Get the current metadata of the tuple
-      TupleMeta current_meta = table->table_->GetTupleMetaWithLockAcquired(rid, table_page);
+      auto [current_meta, current_tuple] = table->table_->GetTupleWithLockAcquired(rid, table_page);
       read_page_guard.Drop();
       // Check if this is a tuple modified by this transaction (indicated by temporary txn ID)
       if (current_meta.ts_ == txn->GetTransactionTempTs()) {
@@ -132,9 +132,15 @@ void TransactionManager::Abort(Transaction *txn) {
               // Set timestamp to 0 and mark as deleted to indicate it never existed
               UpdateUndoLink(rid, std::nullopt);
             }
-            // Restore the original metadata timestamp from the previous version
-            auto restored_meta = TupleMeta{.ts_ = undo_log.ts_, .is_deleted_ = undo_log.is_deleted_};
-            table->table_->UpdateTupleInPlace(restored_meta, undo_log.tuple_, rid);
+            auto old_tuple = ReconstructTuple(&table->schema_, current_tuple, current_meta, {undo_log});
+
+            if (old_tuple.has_value()) {
+              LOG_INFO("txn%ld: undo log to tuple %s", txn->GetTransactionIdHumanReadable(),
+                       old_tuple.value().ToString(&table->schema_).c_str());
+              // Restore the original metadata timestamp from the previous version
+              auto restored_meta = TupleMeta{.ts_ = undo_log.ts_, .is_deleted_ = undo_log.is_deleted_};
+              table->table_->UpdateTupleInPlace(restored_meta, old_tuple.value(), rid);
+            }
           }
         }
       }
