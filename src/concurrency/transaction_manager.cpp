@@ -127,6 +127,8 @@ void TransactionManager::Abort(Transaction *txn) {
             if (undo_log.prev_version_.IsValid()) {
               // Update the version chain to skip this transaction's entry
               UpdateUndoLink(rid, undo_log.prev_version_);
+              auto prev_undo_log = txn->GetUndoLog(undo_log.prev_version_.prev_log_idx_);
+              prev_undo_log.next_version_ = RedoLink{};
             } else {
               // If no previous version, this was a newly inserted tuple by this transaction
               // Set timestamp to 0 and mark as deleted to indicate it never existed

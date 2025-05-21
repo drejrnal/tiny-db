@@ -38,8 +38,8 @@ auto SeqScanExecutor::Next(Tuple *tuple, RID *rid) -> bool {
   auto table_page = read_page_guard.As<TablePage>();
 
   auto next_tuple_pair = this->table_heap_->GetTupleWithLockAcquired(current_rid, table_page);
-  if (txn->GetTransactionTempTs() == next_tuple_pair.first.ts_) {
-    // 读取当前事务正在修改的tuple
+  if (txn->GetTransactionTempTs() == next_tuple_pair.first.ts_ || next_tuple_pair.first.ts_ <= txn->GetReadTs()) {
+    // 读取当前事务正在修改的tuple或者当前tuple的时间戳小于当前事务的读时间戳
     *tuple = next_tuple_pair.second;
     *rid = tuple->GetRid();
   } else {

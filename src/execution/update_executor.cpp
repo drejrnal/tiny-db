@@ -56,53 +56,55 @@ auto UpdateExecutor::Next([[maybe_unused]] Tuple *tuple, RID *rid) -> bool {
     updated_values.push_back(expr->Evaluate(&child_tuple, child_executor_->GetOutputSchema()));
   }
   Tuple updated_tuple(updated_values, &child_executor_->GetOutputSchema());
-  // UpdateTupleInPlace内既会更新tuple也会更新meta信息
-  if (table->UpdateTupleInPlace(meta, updated_tuple, child_rid,
-                                [&old_meta](const TupleMeta &origin_meta, const Tuple &tuple, const RID rid) -> bool {
-                                  return origin_meta == old_meta;
-                                })) {
-    UndoLink new_undo_link;
-    auto prev_undo_link = txn_mgr->GetUndoLink(child_rid);
-    if (txn->GetUndoLogIndex(child_rid) != INVALID_UNDOLOG_INDEX) {
-      UndoLog exist_undo_log = txn->GetUndoLog(txn->GetUndoLogIndex(child_rid));
-      UpdateExistUndoLog(&exist_undo_log, false, schema, child_tuple, updated_tuple);
-      txn->ModifyUndoLog(txn->GetUndoLogIndex(child_rid), exist_undo_log);
-    } else {
-      auto new_undo_log = GenerateNewUndoLog(txn, child_tuple, updated_tuple, false, old_meta.ts_, child_executor_->GetOutputSchema(),
-                                             prev_undo_link);
-      new_undo_link = txn->AppendUndoLog(new_undo_log);
-      txn->RecordRidUndoLogIndex(child_rid, txn->GetUndoLogNum() - 1);
-    }
-    /* 更新page version info表 */
-    auto updated_result = txn_mgr->UpdateUndoLink(child_rid, new_undo_link,
-                                                  [&prev_undo_link](const std::optional<UndoLink> &undo) -> bool {
-                                                    if (undo.has_value() && prev_undo_link.has_value()) {
-                                                      return undo.value() == prev_undo_link.value();
-                                                    }
-                                                    if (!undo.has_value() && !prev_undo_link.has_value()) {
-                                                      return true;
-                                                    }
-                                                    return false;
-                                                  });
-    /** 当tuple被成功更新时，更新prev_undo_log的next version,使其可以访问当前的更新， 因为
-     *  前述函数相当于一个原子操作，此处的更新和前述next_undo_log更新prev_version的操作也可以
-     *  看做是原子的
-     */
-    if (updated_result) {
-      *rid = child_rid;
-      // 收集当前更新的tuple到write set中，以便在事务提交时进行时间戳的更新
-      txn->AppendWriteSet(plan_->table_oid_, child_rid);
-      if (prev_undo_link.has_value()) {
-        auto prev_undo_log = txn_mgr->GetUndoLogOptional(prev_undo_link.value());
-        if (prev_undo_log.has_value()) {
-          auto prev_undo_log_value = prev_undo_log.value();
-          prev_undo_log_value.next_version_ = RedoLink{
-              .next_txn_ = new_undo_link.prev_txn_,
-              .next_log_idx_ = new_undo_link.prev_log_idx_,
-          };
+  UndoLink new_undo_link;
+  auto prev_undo_link = txn_mgr->GetUndoLink(child_rid);
+  if (txn->GetUndoLogIndex(child_rid) != INVALID_UNDOLOG_INDEX) {
+    UndoLog exist_undo_log = txn->GetUndoLog(txn->GetUndoLogIndex(child_rid));
+    UpdateExistUndoLog(&exist_undo_log, false, schema, child_tuple, updated_tuple);
+    txn->ModifyUndoLog(txn->GetUndoLogIndex(child_rid), exist_undo_log);
+  } else {
+    auto new_undo_log = GenerateNewUndoLog(txn, child_tuple, updated_tuple, false, old_meta.ts_,
+                                           child_executor_->GetOutputSchema(), prev_undo_link);
+    new_undo_link = txn->AppendUndoLog(new_undo_log);
+    txn->RecordRidUndoLogIndex(child_rid, txn->GetUndoLogNum() - 1);
+  }
+  /* 更新page version info表 */
+  auto updated_result =
+      txn_mgr->UpdateUndoLink(child_rid, new_undo_link, [&prev_undo_link](const std::optional<UndoLink> &undo) -> bool {
+        if (undo.has_value() && prev_undo_link.has_value()) {
+          return undo.value() == prev_undo_link.value();
         }
+        if (!undo.has_value() && !prev_undo_link.has_value()) {
+          return true;
+        }
+        return false;
+      });
+  /** 当tuple被成功更新时，更新prev_undo_log的next version,使其可以访问当前的更新， 因为
+   *  前述函数相当于一个原子操作，此处的更新和前述next_undo_log更新prev_version的操作也可以
+   *  看做是原子的
+   */
+  if (updated_result) {
+    *rid = child_rid;
+    // 收集当前更新的tuple到write set中，以便在事务提交时进行时间戳的更新
+    txn->AppendWriteSet(plan_->table_oid_, child_rid);
+    if (prev_undo_link.has_value()) {
+      auto prev_undo_log = txn_mgr->GetUndoLogOptional(prev_undo_link.value());
+      if (prev_undo_log.has_value()) {
+        auto prev_undo_log_value = prev_undo_log.value();
+        prev_undo_log_value.next_version_ = RedoLink{
+            .next_txn_ = new_undo_link.prev_txn_,
+            .next_log_idx_ = new_undo_link.prev_log_idx_,
+        };
       }
+    }
+    if (table->UpdateTupleInPlace(meta, updated_tuple, child_rid,
+                                  [&old_meta](const TupleMeta &origin_meta, const Tuple &tuple, const RID rid) -> bool {
+                                    return origin_meta == old_meta;
+                                  })) {
       return true;
+    } else {
+      // 当update失败时，上层调用会abort当前事务
+      return false;
     }
   }
   return false;
